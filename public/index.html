@@ -44,6 +44,32 @@
     }
     .screen.active { display: flex; }
 
+    /* ── Landing screen ── */
+    #screen-landing { text-align: center; gap: 16px; max-width: 560px; }
+    .landing-logo { font-size: 4rem; margin-bottom: 4px; }
+    #screen-landing h2 { font-size: 2rem; font-weight: 800; color: #1e293b; }
+    #screen-landing .tagline { color: #64748b; font-size: 1.05rem; line-height: 1.6; margin-bottom: 8px; }
+    .landing-cards { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+    .landing-card {
+      background: white; border-radius: 18px; padding: 26px 24px;
+      box-shadow: 0 3px 16px rgba(0,0,0,0.09); text-decoration: none;
+      display: flex; align-items: center; gap: 18px;
+      border: 3px solid transparent; transition: border-color 0.15s, transform 0.12s;
+      cursor: pointer;
+    }
+    .landing-card:hover { border-color: #1a3c8f; transform: translateY(-2px); }
+    .landing-card:active { transform: scale(0.98); }
+    .landing-card-icon { font-size: 2.4rem; flex-shrink: 0; }
+    .landing-card-text { text-align: left; }
+    .landing-card-title { font-size: 1.2rem; font-weight: 800; color: #1e293b; }
+    .landing-card-desc  { font-size: 0.9rem; color: #64748b; margin-top: 3px; }
+    .landing-divider {
+      width: 100%; display: flex; align-items: center; gap: 12px; color: #94a3b8; font-size: 0.85rem; font-weight: 600;
+    }
+    .landing-divider::before, .landing-divider::after {
+      content: ''; flex: 1; height: 1px; background: #e2e8f0;
+    }
+
     /* ── Setup screen (no center configured) ── */
     #screen-setup { text-align: center; gap: 14px; }
     .setup-icon { font-size: 4rem; margin-bottom: 8px; }
@@ -56,6 +82,11 @@
       text-align: center;
     }
     .setup-input:focus { border-color: #1a3c8f; }
+    .setup-back {
+      background: none; border: none; color: #64748b; font-size: 1rem;
+      font-weight: 600; cursor: pointer; padding: 8px 16px; border-radius: 8px;
+    }
+    .setup-back:hover { background: #e2e8f0; }
     .setup-btn {
       width: 100%; padding: 18px; border: none; border-radius: 14px;
       background: #1a3c8f; color: white; font-size: 1.3rem; font-weight: 800;
@@ -165,14 +196,53 @@
   <a class="admin-corner" id="admin-link" href="/admin.html">⚙️</a>
 </header>
 
+<!-- Screen -1: Landing (first visit, no center saved) -->
+<div class="screen active" id="screen-landing">
+  <div class="landing-logo">📚</div>
+  <h2>Kumon Check-In</h2>
+  <p class="tagline">The smart check-in system built for Kumon centers.<br>Are you a center owner or setting up a kiosk?</p>
+
+  <div class="landing-cards">
+    <a class="landing-card" href="/signup.html">
+      <span class="landing-card-icon">🏫</span>
+      <div class="landing-card-text">
+        <div class="landing-card-title">I own a Kumon center</div>
+        <div class="landing-card-desc">Create a free account to manage your students and get your kiosk link</div>
+      </div>
+      <span style="color:#1a3c8f;font-size:1.4rem;margin-left:auto;">→</span>
+    </a>
+
+    <a class="landing-card" href="/login.html">
+      <span class="landing-card-icon">🔑</span>
+      <div class="landing-card-text">
+        <div class="landing-card-title">Sign in to my portal</div>
+        <div class="landing-card-desc">Already have an account? Access your admin dashboard</div>
+      </div>
+      <span style="color:#1a3c8f;font-size:1.4rem;margin-left:auto;">→</span>
+    </a>
+
+    <div class="landing-divider">setting up the front desk?</div>
+
+    <div class="landing-card" onclick="showSetup()">
+      <span class="landing-card-icon">🖥️</span>
+      <div class="landing-card-text">
+        <div class="landing-card-title">Set up this device as a kiosk</div>
+        <div class="landing-card-desc">Enter the Center ID from your admin portal to link this tablet or computer</div>
+      </div>
+      <span style="color:#1a3c8f;font-size:1.4rem;margin-left:auto;">→</span>
+    </div>
+  </div>
+</div>
+
 <!-- Screen 0: Setup (no center configured) -->
-<div class="screen active" id="screen-setup">
+<div class="screen" id="screen-setup">
   <div class="setup-icon">📚</div>
   <h2>Kiosk Setup</h2>
   <p>Paste the Center ID you got from your admin portal below to link this device to your center.</p>
   <input class="setup-input" id="center-id-input"
          placeholder="Paste Center ID here…" autocomplete="off" />
   <button class="setup-btn" onclick="activateKiosk()">Start Kiosk →</button>
+  <button class="setup-back" onclick="showLanding()">← Back</button>
 </div>
 
 <!-- Screen 1: Name list -->
@@ -225,7 +295,6 @@
     if (fromUrl) {
       centerId = fromUrl;
       localStorage.setItem('kumon_center_id', fromUrl);
-      // Clean URL without reloading
       window.history.replaceState({}, '', '/');
     } else {
       // 2. Fall back to localStorage (device was set up before)
@@ -236,9 +305,25 @@
       showSelect();
       fetchStudents();
     } else {
-      setScreen('screen-setup', '');
-      document.getElementById('header-sub').textContent = 'Kiosk Setup';
+      // Show landing page — not the kiosk setup
+      showLanding();
     }
+  }
+
+  function showLanding() {
+    centerId = null;
+    currentScreen = 'landing';
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    document.getElementById('screen-landing').classList.add('active');
+    document.getElementById('header-sub').textContent = '';
+  }
+
+  function showSetup() {
+    currentScreen = 'setup';
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    document.getElementById('screen-setup').classList.add('active');
+    document.getElementById('header-sub').textContent = 'Kiosk Setup';
+    setTimeout(() => document.getElementById('center-id-input').focus(), 50);
   }
 
   function activateKiosk() {
