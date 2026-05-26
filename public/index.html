@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kumon Citrus Park Check-In</title>
+  <title>Kumon Check-In</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -22,238 +22,164 @@
       color: white;
       text-align: center;
       padding: 30px 20px 24px;
+      position: relative;
     }
-
     header h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: 1px; }
     header p  { font-size: 1.15rem; opacity: 0.82; margin-top: 8px; min-height: 1.6rem; }
 
+    /* Hidden admin link — triple-tap the header */
+    .admin-corner {
+      position: absolute; top: 14px; right: 18px;
+      opacity: 0; pointer-events: none;
+      font-size: 1.2rem; cursor: pointer;
+      transition: opacity 0.3s;
+    }
+    .admin-corner.visible { opacity: 0.5; pointer-events: auto; }
+
     /* ── Shared screen wrapper ── */
     .screen {
-      display: none;
-      width: 100%;
-      max-width: 520px;
-      padding: 50px 30px;
-      flex-direction: column;
-      align-items: center;
-      gap: 18px;
+      display: none; width: 100%; max-width: 520px;
+      padding: 50px 30px; flex-direction: column;
+      align-items: center; gap: 18px;
     }
     .screen.active { display: flex; }
 
+    /* ── Setup screen (no center configured) ── */
+    #screen-setup { text-align: center; gap: 14px; }
+    .setup-icon { font-size: 4rem; margin-bottom: 8px; }
+    #screen-setup h2 { font-size: 1.8rem; font-weight: 800; color: #1e293b; }
+    #screen-setup p  { color: #64748b; font-size: 1rem; line-height: 1.6; }
+    .setup-input {
+      width: 100%; padding: 16px 20px; border: 3px solid #e2e8f0;
+      border-radius: 14px; font-size: 1.1rem; color: #1e293b;
+      outline: none; font-family: monospace; transition: border-color 0.15s;
+      text-align: center;
+    }
+    .setup-input:focus { border-color: #1a3c8f; }
+    .setup-btn {
+      width: 100%; padding: 18px; border: none; border-radius: 14px;
+      background: #1a3c8f; color: white; font-size: 1.3rem; font-weight: 800;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .setup-btn:active { opacity: 0.85; }
+
     /* ── Search box ── */
-    .search-wrap {
-      width: 100%;
-      position: relative;
-    }
-
+    .search-wrap { width: 100%; position: relative; }
     .search-wrap input {
-      width: 100%;
-      padding: 18px 20px 18px 52px;
-      border: 3px solid #e2e8f0;
-      border-radius: 14px;
-      font-size: 1.3rem;
-      font-weight: 600;
-      color: #1e293b;
-      background: white;
-      outline: none;
-      transition: border-color 0.15s;
+      width: 100%; padding: 18px 20px 18px 52px;
+      border: 3px solid #e2e8f0; border-radius: 14px;
+      font-size: 1.3rem; font-weight: 600; color: #1e293b;
+      background: white; outline: none; transition: border-color 0.15s;
     }
-
     .search-wrap input:focus { border-color: #1a3c8f; }
     .search-wrap input::placeholder { color: #94a3b8; font-weight: 500; }
-
     .search-wrap .search-icon {
-      position: absolute;
-      left: 16px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 1.3rem;
-      pointer-events: none;
+      position: absolute; left: 16px; top: 50%;
+      transform: translateY(-50%); font-size: 1.3rem; pointer-events: none;
     }
-
-    .no-results {
-      color: #94a3b8;
-      font-size: 1.1rem;
-      font-weight: 600;
-      text-align: center;
-      padding: 20px 0;
-    }
+    .no-results { color: #94a3b8; font-size: 1.1rem; font-weight: 600; text-align: center; padding: 20px 0; }
 
     /* ── Name list ── */
     .name-btn {
-      width: 100%;
-      padding: 26px 20px;
-      background: white;
-      border: 3px solid transparent;
-      border-radius: 16px;
-      font-size: 1.9rem;
-      font-weight: 700;
-      color: #1e293b;
-      cursor: pointer;
-      box-shadow: 0 3px 14px rgba(0,0,0,0.09);
+      width: 100%; padding: 26px 20px; background: white;
+      border: 3px solid transparent; border-radius: 16px;
+      font-size: 1.9rem; font-weight: 700; color: #1e293b;
+      cursor: pointer; box-shadow: 0 3px 14px rgba(0,0,0,0.09);
       transition: transform 0.12s, box-shadow 0.12s;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
     .name-btn:active { transform: scale(0.97); }
     .name-btn.in { border-color: #22c55e; background: #f0fdf4; }
-
     .name-btn .name-label { flex: 1; text-align: left; }
-
     .name-btn .badge {
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      padding: 5px 14px;
-      border-radius: 999px;
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 5px 14px; border-radius: 999px;
     }
     .name-btn.in  .badge { background: #dcfce7; color: #15803d; }
     .name-btn.out .badge { background: #f1f5f9; color: #94a3b8; }
-
-    .name-btn .subject-label {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #64748b;
-    }
-
+    .name-btn .subject-label { font-size: 0.85rem; font-weight: 600; color: #64748b; }
     .name-btn .inline-timer {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #1a3c8f;
-      font-variant-numeric: tabular-nums;
-      min-width: 58px;
-      text-align: right;
+      font-size: 1.05rem; font-weight: 700; color: #1a3c8f;
+      font-variant-numeric: tabular-nums; min-width: 58px; text-align: right;
     }
     .name-btn .inline-timer.warning { color: #dc2626; }
 
     /* ── Subject buttons ── */
-    .subject-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      width: 100%;
-    }
-
+    .subject-grid { display: flex; flex-direction: column; gap: 16px; width: 100%; }
     .subject-btn {
-      width: 100%;
-      padding: 24px 20px;
-      border: 3px solid #e2e8f0;
-      border-radius: 16px;
-      font-size: 1.5rem;
-      font-weight: 700;
-      cursor: pointer;
-      background: white;
+      width: 100%; padding: 24px 20px; border: 3px solid #e2e8f0;
+      border-radius: 16px; font-size: 1.5rem; font-weight: 700;
+      cursor: pointer; background: white;
       transition: transform 0.12s, border-color 0.12s, background 0.12s;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between;
     }
     .subject-btn:active { transform: scale(0.97); }
     .subject-btn:hover  { border-color: #1a3c8f; background: #eef2ff; }
-
     .subject-btn .subj-name  { color: #1e293b; }
     .subject-btn .subj-limit { font-size: 1rem; font-weight: 600; color: #64748b; }
 
     /* ── Action screen ── */
     #screen-action { text-align: center; }
-
-    #screen-action h2 {
-      font-size: 2.4rem;
-      font-weight: 800;
-      color: #1e293b;
-    }
-
+    #screen-action h2 { font-size: 2.4rem; font-weight: 800; color: #1e293b; }
     .status-line { font-size: 1.1rem; color: #64748b; }
-
     .subject-tag {
-      display: inline-block;
-      background: #e0e7ff;
-      color: #1a3c8f;
-      font-weight: 700;
-      font-size: 1rem;
-      padding: 6px 18px;
-      border-radius: 999px;
+      display: inline-block; background: #e0e7ff; color: #1a3c8f;
+      font-weight: 700; font-size: 1rem; padding: 6px 18px; border-radius: 999px;
     }
-
     #action-timer {
-      font-size: 3.6rem;
-      font-weight: 800;
-      color: #1a3c8f;
-      font-variant-numeric: tabular-nums;
-      min-height: 4rem;
-      line-height: 1;
+      font-size: 3.6rem; font-weight: 800; color: #1a3c8f;
+      font-variant-numeric: tabular-nums; min-height: 4rem; line-height: 1;
     }
     #action-timer.warning { color: #dc2626; }
-
-    /* progress bar */
     .progress-wrap {
-      width: 100%;
-      background: #e2e8f0;
-      border-radius: 999px;
-      height: 12px;
-      overflow: hidden;
+      width: 100%; background: #e2e8f0; border-radius: 999px; height: 12px; overflow: hidden;
     }
     .progress-bar {
-      height: 100%;
-      border-radius: 999px;
-      background: #22c55e;
+      height: 100%; border-radius: 999px; background: #22c55e;
       transition: width 1s linear, background 0.5s;
     }
     .progress-bar.over { background: #ef4444; }
-
     .action-btn {
-      width: 100%;
-      padding: 22px;
-      border: none;
-      border-radius: 14px;
-      font-size: 1.5rem;
-      font-weight: 800;
-      cursor: pointer;
+      width: 100%; padding: 22px; border: none; border-radius: 14px;
+      font-size: 1.5rem; font-weight: 800; cursor: pointer;
       transition: opacity 0.15s, transform 0.1s;
     }
     .action-btn:active { transform: scale(0.97); opacity: 0.85; }
     .btn-checkout { background: #ef4444; color: white; }
-
     .btn-back {
-      background: none;
-      border: none;
-      color: #64748b;
-      font-size: 1.1rem;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 10px 20px;
-      border-radius: 8px;
+      background: none; border: none; color: #64748b;
+      font-size: 1.1rem; font-weight: 600; cursor: pointer;
+      padding: 10px 20px; border-radius: 8px;
     }
     .btn-back:hover { background: #e2e8f0; }
-
-    .divider {
-      width: 100%;
-      border: none;
-      border-top: 2px solid #e2e8f0;
-    }
-
-    .screen-title {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: #1e293b;
-      align-self: flex-start;
-    }
+    .divider { width: 100%; border: none; border-top: 2px solid #e2e8f0; }
+    .screen-title { font-size: 1.3rem; font-weight: 700; color: #1e293b; align-self: flex-start; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Kumon Citrus Park Check-In</h1>
-  <p id="header-sub">Select your name below</p>
+  <h1 id="header-title">Kumon Check-In</h1>
+  <p id="header-sub">Loading…</p>
+  <!-- Triple-tap header to reveal admin link -->
+  <a class="admin-corner" id="admin-link" href="/admin.html">⚙️</a>
 </header>
 
+<!-- Screen 0: Setup (no center configured) -->
+<div class="screen active" id="screen-setup">
+  <div class="setup-icon">📚</div>
+  <h2>Kiosk Setup</h2>
+  <p>Paste the Center ID you got from your admin portal below to link this device to your center.</p>
+  <input class="setup-input" id="center-id-input"
+         placeholder="Paste Center ID here…" autocomplete="off" />
+  <button class="setup-btn" onclick="activateKiosk()">Start Kiosk →</button>
+</div>
+
 <!-- Screen 1: Name list -->
-<div class="screen active" id="screen-select">
+<div class="screen" id="screen-select">
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
-    <input type="text" id="search-input" placeholder="Type your name to find it..."
+    <input type="text" id="search-input" placeholder="Type your name to find it…"
            oninput="filterNames()" autocomplete="off" />
   </div>
   <div id="name-list" style="width:100%;display:flex;flex-direction:column;gap:18px;"></div>
@@ -263,19 +189,8 @@
 <div class="screen" id="screen-subject">
   <p class="screen-title" id="subject-greeting"></p>
   <p class="status-line">What are you working on today?</p>
-  <div class="subject-grid">
-    <button class="subject-btn" onclick="selectSubject('Math')">
-      <span class="subj-name">📐 Math</span>
-      <span class="subj-limit">35 min</span>
-    </button>
-    <button class="subject-btn" onclick="selectSubject('Reading')">
-      <span class="subj-name">📖 Reading</span>
-      <span class="subj-limit">35 min</span>
-    </button>
-    <button class="subject-btn" onclick="selectSubject('Both')">
-      <span class="subj-name">📐📖 Both</span>
-      <span class="subj-limit">70 min</span>
-    </button>
+  <div class="subject-grid" id="subject-grid">
+    <!-- populated dynamically with limits from server -->
   </div>
   <button class="btn-back" onclick="showSelect()">&#8592; Back</button>
 </div>
@@ -295,72 +210,147 @@
 </div>
 
 <script>
-  const LIMITS = { Math: 35, Reading: 35, Both: 70 };
+  // ── Center detection ──────────────────────────────────────────────────────────
+  let centerId      = null;
+  let LIMITS        = { Math: 35, Reading: 35, Both: 70 };
+  let students      = [];
+  let selectedId    = null;
+  let selectedName  = null;
+  let currentScreen = 'setup';
 
-  let students = [];
-  let selectedName = null;
-  let currentScreen = 'select';
+  function detectCenter() {
+    // 1. URL param takes priority (the kiosk link from admin panel)
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('center');
+    if (fromUrl) {
+      centerId = fromUrl;
+      localStorage.setItem('kumon_center_id', fromUrl);
+      // Clean URL without reloading
+      window.history.replaceState({}, '', '/');
+    } else {
+      // 2. Fall back to localStorage (device was set up before)
+      centerId = localStorage.getItem('kumon_center_id');
+    }
 
-  // ── Fetch ───────────────────────────────────────────────────────────────────
+    if (centerId) {
+      showSelect();
+      fetchStudents();
+    } else {
+      setScreen('screen-setup', '');
+      document.getElementById('header-sub').textContent = 'Kiosk Setup';
+    }
+  }
+
+  function activateKiosk() {
+    const input = document.getElementById('center-id-input').value.trim();
+    if (!input) return;
+    centerId = input;
+    localStorage.setItem('kumon_center_id', input);
+    showSelect();
+    fetchStudents();
+  }
+
+  // Triple-tap header to show admin link
+  let tapCount = 0; let tapTimer = null;
+  document.querySelector('header').addEventListener('click', () => {
+    tapCount++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => { tapCount = 0; }, 600);
+    if (tapCount >= 3) {
+      document.getElementById('admin-link').classList.toggle('visible');
+      tapCount = 0;
+    }
+  });
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────────
   async function fetchStudents() {
+    if (!centerId) return;
     try {
-      const res = await fetch('/api/students');
-      students = await res.json();
+      const res = await fetch(`/api/kiosk/${centerId}/students`);
+      if (res.status === 404 || res.status === 500) {
+        // Bad center ID
+        centerId = null; localStorage.removeItem('kumon_center_id');
+        setScreen('screen-setup', '');
+        return;
+      }
+      const data = await res.json();
+      if (data.limits) LIMITS = data.limits;
+      students = data.students || [];
+
+      // Update subject grid with live limits
+      document.getElementById('subject-grid').innerHTML = `
+        <button class="subject-btn" onclick="selectSubject('Math')">
+          <span class="subj-name">📐 Math</span>
+          <span class="subj-limit">${LIMITS.Math} min</span>
+        </button>
+        <button class="subject-btn" onclick="selectSubject('Reading')">
+          <span class="subj-name">📖 Reading</span>
+          <span class="subj-limit">${LIMITS.Reading} min</span>
+        </button>
+        <button class="subject-btn" onclick="selectSubject('Both')">
+          <span class="subj-name">📐📖 Both</span>
+          <span class="subj-limit">${LIMITS.Both} min</span>
+        </button>`;
+
       if (currentScreen === 'select') renderSelect();
     } catch (e) {
       console.error('Fetch error:', e);
     }
   }
 
-  // ── Screen 1: Name List ─────────────────────────────────────────────────────
-  function renderSelect() {
-    filterNames();
-  }
+  // ── Screen 1: Name List ───────────────────────────────────────────────────────
+  function renderSelect() { filterNames(); }
 
   function filterNames() {
     const query = (document.getElementById('search-input').value || '').toLowerCase().trim();
     const list  = document.getElementById('name-list');
     const visible = students.filter(s => s.name.toLowerCase().includes(query));
 
-    if (visible.length === 0) {
+    if (!visible.length) {
       list.innerHTML = '<p class="no-results">No student found</p>';
       return;
     }
 
-    list.innerHTML = visible.map(s => `
-      <button class="name-btn ${s.checkedIn ? 'in' : 'out'}"
-              onclick="onNameClick('${s.name}')">
-        <span class="name-label">${s.name}</span>
-        ${s.checkedIn ? `<span class="subject-label">${s.subject}</span>` : ''}
-        <span class="inline-timer ${s.elapsedMs && s.limitMs && s.elapsedMs > s.limitMs ? 'warning' : ''}"
-              id="itimer-${s.name}">
-          ${s.checkedIn ? formatMs(s.elapsedMs || 0) : ''}
-        </span>
-        <span class="badge">${s.checkedIn ? 'In' : 'Out'}</span>
-      </button>
-    `).join('');
+    list.innerHTML = visible.map(s => {
+      const safeId   = s.id;
+      const safeName = s.name.replace(/'/g, "\\'");
+      return `
+        <button class="name-btn ${s.checkedIn ? 'in' : 'out'}"
+                data-id="${safeId}"
+                data-name="${s.name.replace(/"/g, '&quot;')}"
+                onclick="onNameClick('${safeId}', this.dataset.name)">
+          <span class="name-label">${s.name}</span>
+          ${s.checkedIn ? `<span class="subject-label">${s.subject}</span>` : ''}
+          <span class="inline-timer ${s.elapsedMs && s.limitMs && s.elapsedMs > s.limitMs ? 'warning' : ''}"
+                id="itimer-${safeId}">
+            ${s.checkedIn ? formatMs(s.elapsedMs || 0) : ''}
+          </span>
+          <span class="badge">${s.checkedIn ? 'In' : 'Out'}</span>
+        </button>`;
+    }).join('');
   }
 
   function showSelect() {
-    selectedName = null;
+    selectedId = null; selectedName = null;
     currentScreen = 'select';
     setScreen('screen-select', 'Select your name below');
     document.getElementById('search-input').value = '';
     filterNames();
   }
 
-  // ── Name clicked ────────────────────────────────────────────────────────────
-  function onNameClick(name) {
+  // ── Name clicked ──────────────────────────────────────────────────────────────
+  function onNameClick(id, name) {
+    selectedId   = id;
     selectedName = name;
-    const s = students.find(x => x.name === name);
-    if (s.checkedIn) {
+    const s = students.find(x => x.id === id);
+    if (s?.checkedIn) {
       showAction(s);
     } else {
       showSubjectSelect(name);
     }
   }
 
-  // ── Screen 2: Subject Selection ─────────────────────────────────────────────
+  // ── Screen 2: Subject Selection ───────────────────────────────────────────────
   function showSubjectSelect(name) {
     currentScreen = 'subject';
     document.getElementById('subject-greeting').textContent = `Hi, ${name}!`;
@@ -369,43 +359,37 @@
 
   async function selectSubject(subject) {
     try {
-      await fetch(`/api/checkin/${selectedName}`, {
+      await fetch(`/api/kiosk/${centerId}/checkin/${selectedId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject }),
       });
       await fetchStudents();
-      const s = students.find(x => x.name === selectedName);
+      const s = students.find(x => x.id === selectedId);
       showAction(s);
-    } catch (e) {
-      console.error('Check-in failed:', e);
-    }
+    } catch (e) { console.error('Check-in failed:', e); }
   }
 
-  // ── Screen 3: Action (check-out) ────────────────────────────────────────────
+  // ── Screen 3: Action (check-out) ──────────────────────────────────────────────
   function showAction(s) {
     currentScreen = 'action';
     setScreen('screen-action', '');
-
-    document.getElementById('action-name').textContent = `Hi, ${s.name}!`;
+    document.getElementById('action-name').textContent        = `Hi, ${s.name}!`;
     document.getElementById('action-subject-tag').textContent = s.subject;
-    document.getElementById('action-status').textContent =
+    document.getElementById('action-status').textContent      =
       `Working on ${s.subject} — limit: ${LIMITS[s.subject]} min`;
-
     updateActionTimer(s);
   }
 
   function updateActionTimer(s) {
     if (!s) return;
     const elapsed = s.elapsedMs || 0;
-    const limit   = s.limitMs || LIMITS[s.subject] * 60 * 1000;
+    const limit   = s.limitMs || LIMITS[s.subject] * 60000;
     const over    = elapsed > limit;
     const pct     = Math.min((elapsed / limit) * 100, 100);
-
     const timerEl = document.getElementById('action-timer');
     timerEl.textContent = formatMs(elapsed);
     timerEl.className   = over ? 'warning' : '';
-
     const bar = document.getElementById('progress-bar');
     bar.style.width = pct + '%';
     bar.className   = 'progress-bar' + (over ? ' over' : '');
@@ -413,32 +397,28 @@
 
   async function doCheckout() {
     try {
-      await fetch(`/api/checkout/${selectedName}`, { method: 'POST' });
+      await fetch(`/api/kiosk/${centerId}/checkout/${selectedId}`, { method: 'POST' });
       await fetchStudents();
       showSelect();
-    } catch (e) {
-      console.error('Check-out failed:', e);
-    }
+    } catch (e) { console.error('Check-out failed:', e); }
   }
 
-  // ── Live Timers ─────────────────────────────────────────────────────────────
+  // ── Live Timers ───────────────────────────────────────────────────────────────
   function tickTimers() {
     const now = Date.now();
     students.forEach(s => {
       if (!s.checkedIn || !s.checkInTime) return;
       const elapsed = now - s.checkInTime;
-      const limit   = s.limitMs || LIMITS[s.subject] * 60 * 1000;
+      const limit   = s.limitMs || LIMITS[s.subject] * 60000;
       const over    = elapsed > limit;
 
-      // inline timer on name list
-      const it = document.getElementById(`itimer-${s.name}`);
+      const it = document.getElementById(`itimer-${s.id}`);
       if (it) {
         it.textContent = formatMs(elapsed);
         it.className   = `inline-timer ${over ? 'warning' : ''}`;
       }
 
-      // action screen timer
-      if (currentScreen === 'action' && selectedName === s.name) {
+      if (currentScreen === 'action' && selectedId === s.id) {
         updateActionTimer({ ...s, elapsedMs: elapsed, limitMs: limit });
       }
     });
@@ -460,17 +440,16 @@
     document.getElementById('header-sub').textContent = subtitle;
   }
 
-  // focus search box whenever the select screen becomes active
+  // Focus search on select screen
   const observer = new MutationObserver(() => {
-    const sel = document.getElementById('screen-select');
-    if (sel && sel.classList.contains('active')) {
+    if (document.getElementById('screen-select').classList.contains('active')) {
       document.getElementById('search-input').focus();
     }
   });
   observer.observe(document.getElementById('screen-select'), { attributes: true, attributeFilter: ['class'] });
 
-  // ── Init ────────────────────────────────────────────────────────────────────
-  fetchStudents();
+  // ── Init ──────────────────────────────────────────────────────────────────────
+  detectCenter();
   setInterval(fetchStudents, 15000);
   setInterval(tickTimers, 1000);
 </script>

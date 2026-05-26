@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Center Portal — Kumon Check-In</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4ff;
+      min-height: 100vh;
+      color: #1e293b;
+    }
+
+    /* ── Top Nav ── */
+    nav {
+      background: #1a3c8f;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 28px;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.1rem; }
+    .nav-brand-icon { font-size: 1.3rem; }
+    .nav-center-name {
+      font-weight: 700; font-size: 0.9rem; opacity: 0.75;
+      background: rgba(255,255,255,0.12); border-radius: 999px;
+      padding: 3px 12px; margin-left: 6px;
+    }
+    nav .spacer { flex: 1; }
+    .nav-btn {
+      background: rgba(255,255,255,0.14); border: none; color: white;
+      border-radius: 8px; padding: 7px 14px; font-size: 0.875rem; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.25); }
+    .nav-kiosk {
+      background: rgba(255,255,255,0.18);
+      text-decoration: none; color: white;
+      border-radius: 8px; padding: 7px 14px; font-size: 0.875rem; font-weight: 600;
+    }
+    .nav-kiosk:hover { background: rgba(255,255,255,0.28); }
+
+    /* ── Tab Bar ── */
+    .tabs {
+      background: white;
+      border-bottom: 2px solid #e2e8f0;
+      display: flex;
+      padding: 0 28px;
+      gap: 4px;
+    }
+    .tab-btn {
+      padding: 14px 18px;
+      border: none; background: none;
+      font-size: 0.95rem; font-weight: 600;
+      color: #64748b; cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover  { color: #1a3c8f; }
+    .tab-btn.active { color: #1a3c8f; border-bottom-color: #1a3c8f; }
+
+    /* ── Content ── */
+    .content { max-width: 1100px; margin: 0 auto; padding: 32px 28px; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Stat Cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 22px 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .stat-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; }
+    .stat-value { font-size: 2.4rem; font-weight: 800; color: #1a3c8f; margin-top: 4px; line-height: 1; }
+    .stat-card.highlight .stat-value { color: #22c55e; }
+
+    /* ── Kiosk URL Card ── */
+    .kiosk-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      margin-bottom: 28px;
+    }
+    .kiosk-card h3 { font-size: 1rem; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+    .kiosk-card p  { font-size: 0.875rem; color: #64748b; margin-bottom: 14px; }
+    .kiosk-url-row { display: flex; gap: 10px; align-items: center; }
+    .kiosk-url-input {
+      flex: 1; padding: 10px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 0.875rem; color: #64748b; background: #f8fafc;
+      font-family: monospace; outline: none;
+    }
+    .btn-copy {
+      padding: 10px 18px; border: none; border-radius: 10px;
+      background: #1a3c8f; color: white; font-weight: 700; font-size: 0.875rem;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s;
+    }
+    .btn-copy:hover { background: #1e47a8; }
+    .btn-open {
+      padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 10px;
+      background: white; color: #1e293b; font-weight: 700; font-size: 0.875rem;
+      cursor: pointer; text-decoration: none; white-space: nowrap;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex; gap: 10px; align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar-search {
+      flex: 1; min-width: 200px;
+      padding: 9px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 0.95rem; outline: none; font-family: inherit;
+    }
+    .toolbar-search:focus { border-color: #1a3c8f; }
+    .btn-add {
+      padding: 10px 18px; border: none; border-radius: 10px;
+      background: #1a3c8f; color: white; font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; transition: background 0.15s; white-space: nowrap;
+    }
+    .btn-add:hover { background: #1e47a8; }
+    .btn-secondary {
+      padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 10px;
+      background: white; color: #1e293b; font-size: 0.875rem; font-weight: 700;
+      cursor: pointer; transition: border-color 0.15s; white-space: nowrap;
+    }
+    .btn-secondary:hover { border-color: #1a3c8f; color: #1a3c8f; }
+    .btn-danger-outline {
+      padding: 10px 16px; border: 2px solid #fca5a5; border-radius: 10px;
+      background: white; color: #dc2626; font-size: 0.875rem; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+    }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: white; border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07); overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 13px 18px; text-align: left;
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: #94a3b8;
+      background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+    }
+    tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f8fafc; }
+    tbody td { padding: 14px 18px; font-size: 0.925rem; vertical-align: middle; }
+
+    .student-name-cell { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+    .live-dot {
+      width: 9px; height: 9px; border-radius: 50%; background: #22c55e;
+      flex-shrink: 0; animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+
+    .status-badge {
+      display: inline-block; border-radius: 999px; padding: 3px 12px;
+      font-size: 0.8rem; font-weight: 700;
+    }
+    .status-badge.in  { background: #dcfce7; color: #15803d; }
+    .status-badge.out { background: #f1f5f9; color: #94a3b8; }
+
+    .subj-chip {
+      display: inline-block; padding: 2px 10px; border-radius: 999px;
+      font-size: 0.8rem; font-weight: 700;
+      background: #e0e7ff; color: #1a3c8f;
+    }
+
+    .action-btns { display: flex; gap: 6px; }
+    .btn-icon {
+      width: 32px; height: 32px; border: none; border-radius: 8px;
+      background: #f1f5f9; cursor: pointer; font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s;
+    }
+    .btn-icon:hover { background: #e2e8f0; }
+    .btn-icon.danger:hover { background: #fee2e2; }
+    .btn-icon.warn:hover   { background: #fef9c3; }
+
+    /* ── Settings Form ── */
+    .settings-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    }
+    @media (max-width: 700px) { .settings-grid { grid-template-columns: 1fr; } }
+    .settings-card {
+      background: white; border-radius: 16px; padding: 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .settings-card h3 { font-size: 1rem; font-weight: 800; color: #1e293b; margin-bottom: 18px; }
+    .field-row { margin-bottom: 16px; }
+    .field-row label { display: block; font-weight: 700; font-size: 0.875rem; color: #374151; margin-bottom: 6px; }
+    .field-row input, .field-row textarea {
+      width: 100%; padding: 10px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 0.95rem; color: #1e293b; outline: none; font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .field-row input:focus, .field-row textarea:focus { border-color: #1a3c8f; }
+    .field-row textarea { resize: vertical; min-height: 90px; }
+    .field-note { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
+    .limit-row { display: flex; gap: 12px; }
+    .limit-item { flex: 1; }
+    .limit-item label { display: block; font-size: 0.8rem; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+    .limit-item input { text-align: center; }
+    .btn-save {
+      margin-top: 8px; padding: 12px 24px; border: none; border-radius: 10px;
+      background: #1a3c8f; color: white; font-size: 0.95rem; font-weight: 800;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-save:hover { background: #1e47a8; }
+
+    /* ── History ── */
+    .history-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .history-filters select {
+      padding: 9px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 0.875rem; font-family: inherit; outline: none; background: white;
+    }
+    .elapsed-ok  { color: #15803d; font-weight: 700; }
+    .elapsed-over { color: #dc2626; font-weight: 700; }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center; padding: 60px 20px; color: #94a3b8;
+    }
+    .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty h3 { font-size: 1.1rem; font-weight: 700; color: #64748b; margin-bottom: 6px; }
+
+    /* ── Modal ── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 200;
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: white; border-radius: 20px; padding: 32px;
+      width: 100%; max-width: 440px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+    .modal-header h2 { font-size: 1.2rem; font-weight: 800; }
+    .modal-close {
+      width: 32px; height: 32px; border: none; border-radius: 8px;
+      background: #f1f5f9; cursor: pointer; font-size: 1.1rem; line-height: 1;
+    }
+    .modal-close:hover { background: #e2e8f0; }
+    .modal-field { margin-bottom: 16px; }
+    .modal-field label { display: block; font-size: 0.875rem; font-weight: 700; color: #374151; margin-bottom: 6px; }
+    .modal-field input, .modal-field select {
+      width: 100%; padding: 11px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 0.95rem; font-family: inherit; outline: none; color: #1e293b;
+    }
+    .modal-field input:focus, .modal-field select:focus { border-color: #1a3c8f; }
+    .modal-footer { display: flex; gap: 10px; margin-top: 22px; }
+    .btn-modal-cancel {
+      flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px;
+      background: white; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-modal-save {
+      flex: 2; padding: 12px; border: none; border-radius: 10px;
+      background: #1a3c8f; color: white; font-size: 0.95rem; font-weight: 800; cursor: pointer;
+    }
+    .btn-modal-save:hover { background: #1e47a8; }
+    .modal-error {
+      background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px;
+      padding: 10px 14px; color: #dc2626; font-size: 0.875rem; font-weight: 600;
+      margin-bottom: 14px; display: none;
+    }
+
+    /* Bulk import modal */
+    .modal-field textarea.bulk-area {
+      width: 100%; height: 160px; padding: 11px 14px;
+      border: 2px solid #e2e8f0; border-radius: 10px; resize: vertical;
+      font-size: 0.95rem; font-family: inherit; outline: none;
+    }
+    .modal-field textarea.bulk-area:focus { border-color: #1a3c8f; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: #1e293b; color: white; padding: 12px 24px;
+      border-radius: 999px; font-weight: 700; font-size: 0.95rem;
+      opacity: 0; transition: opacity 0.25s, transform 0.25s; z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.error { background: #dc2626; }
+    .toast.success { background: #16a34a; }
+
+    @media (max-width: 640px) {
+      nav { padding: 0 16px; }
+      .tabs { padding: 0 12px; }
+      .content { padding: 20px 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top Nav -->
+<nav>
+  <div class="nav-brand">
+    <span class="nav-brand-icon">📚</span>
+    Kumon Check-In
+  </div>
+  <span class="nav-center-name" id="center-name-display">Loading…</span>
+  <div class="spacer"></div>
+  <a class="nav-kiosk" href="/" target="_blank">🖥 Open Kiosk</a>
+  <button class="nav-btn" onclick="logout()">Sign Out</button>
+</nav>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tab="overview"  onclick="switchTab('overview')">📊 Overview</button>
+  <button class="tab-btn"        data-tab="students"  onclick="switchTab('students')">👥 Students</button>
+  <button class="tab-btn"        data-tab="settings"  onclick="switchTab('settings')">⚙️ Settings</button>
+  <button class="tab-btn"        data-tab="history"   onclick="switchTab('history')">📋 History</button>
+</div>
+
+<div class="content">
+
+  <!-- ── OVERVIEW ── -->
+  <div class="tab-content active" data-tab="overview">
+    <div class="stats-grid">
+      <div class="stat-card highlight">
+        <div class="stat-label">Active Right Now</div>
+        <div class="stat-value" id="stat-active">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Students Today</div>
+        <div class="stat-value" id="stat-today">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Session Time</div>
+        <div class="stat-value" id="stat-avg">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Students</div>
+        <div class="stat-value" id="stat-total">—</div>
+      </div>
+    </div>
+
+    <div class="kiosk-card">
+      <h3>🖥 Your Kiosk Link</h3>
+      <p>Copy this URL and open it on the tablet or computer at your front desk. Bookmark it — students check in here.</p>
+      <div class="kiosk-url-row">
+        <input class="kiosk-url-input" id="kiosk-url" readonly value="Loading…" onclick="this.select()" />
+        <button class="btn-copy" onclick="copyKioskUrl()">Copy</button>
+        <a class="btn-open" id="kiosk-open-link" href="#" target="_blank">Open ↗</a>
+      </div>
+    </div>
+
+    <div class="table-wrap" id="active-section" style="display:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Student</th><th>Subject</th><th>Checked In</th><th>Time Elapsed</th>
+          </tr>
+        </thead>
+        <tbody id="active-tbody"></tbody>
+      </table>
+    </div>
+    <div id="active-empty" class="empty" style="display:none">
+      <div class="empty-icon">✅</div>
+      <h3>No students are currently checked in</h3>
+    </div>
+  </div>
+
+  <!-- ── STUDENTS ── -->
+  <div class="tab-content" data-tab="students">
+    <div class="toolbar">
+      <button class="btn-add"          onclick="openAddModal()">+ Add Student</button>
+      <button class="btn-secondary"    onclick="openBulkModal()">📋 Bulk Import</button>
+      <button class="btn-danger-outline" onclick="clearAllCheckins()">🔄 Clear All Check-ins</button>
+      <input class="toolbar-search" type="text" placeholder="🔍 Search students…"
+             oninput="renderStudents(this.value)" id="student-search" />
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Default Subject</th>
+            <th>Parent Email</th>
+            <th>Sessions</th>
+            <th>Avg Time</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="students-tbody">
+          <tr><td colspan="7"><div class="empty"><div class="empty-icon">⏳</div><h3>Loading…</h3></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS ── -->
+  <div class="tab-content" data-tab="settings">
+    <div class="settings-grid">
+      <div class="settings-card">
+        <h3>🕐 Session Time Limits</h3>
+        <p class="field-note" style="margin-bottom:18px;">Students over their limit trigger an email alert.</p>
+        <div class="limit-row">
+          <div class="limit-item">
+            <label>📐 Math (min)</label>
+            <input type="number" id="setting-math" min="1" max="300" />
+          </div>
+          <div class="limit-item">
+            <label>📖 Reading (min)</label>
+            <input type="number" id="setting-reading" min="1" max="300" />
+          </div>
+          <div class="limit-item">
+            <label>📐📖 Both (min)</label>
+            <input type="number" id="setting-both" min="1" max="300" />
+          </div>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h3>🏫 Center Info</h3>
+        <div class="field-row">
+          <label>Center Name</label>
+          <input type="text" id="setting-center-name" placeholder="e.g. Kumon Citrus Park" />
+        </div>
+      </div>
+      <div class="settings-card" style="grid-column: 1 / -1;">
+        <h3>📧 Alert Email Recipients</h3>
+        <div class="field-row">
+          <label>Email Addresses (one per line)</label>
+          <textarea id="setting-emails" placeholder="instructor@kumon.com&#10;manager@kumon.com"></textarea>
+          <p class="field-note">All listed emails will receive an alert when a student exceeds their time limit.</p>
+        </div>
+        <button class="btn-save" onclick="saveSettings()">Save All Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HISTORY ── -->
+  <div class="tab-content" data-tab="history">
+    <div class="history-filters">
+      <select id="filter-subject" onchange="renderHistory()">
+        <option value="">All Subjects</option>
+        <option value="Math">Math</option>
+        <option value="Reading">Reading</option>
+        <option value="Both">Both</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Student</th>
+            <th>Subject</th>
+            <th>Check-In</th>
+            <th>Check-Out</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <tr><td colspan="6"><div class="empty"><div class="empty-icon">⏳</div><h3>Loading…</h3></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<!-- ── Add/Edit Student Modal ── -->
+<div class="modal-backdrop" id="student-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Add Student</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-error" id="modal-error"></div>
+    <div class="modal-field">
+      <label>Name <span style="color:#ef4444">*</span></label>
+      <input type="text" id="modal-name" placeholder="Student's full name" />
+    </div>
+    <div class="modal-field">
+      <label>Default Subject</label>
+      <select id="modal-subject">
+        <option value="">None (ask each time)</option>
+        <option value="Math">📐 Math</option>
+        <option value="Reading">📖 Reading</option>
+        <option value="Both">📐📖 Both</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>Parent Email <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
+      <input type="email" id="modal-parent-email" placeholder="parent@example.com" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-modal-save" onclick="saveStudent()" id="modal-save-btn">Add Student</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bulk Import Modal ── -->
+<div class="modal-backdrop" id="bulk-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>📋 Bulk Import Students</h2>
+      <button class="modal-close" onclick="closeBulkModal()">✕</button>
+    </div>
+    <div class="modal-field">
+      <label>Student Names (one per line)</label>
+      <textarea class="bulk-area" id="bulk-names" placeholder="Aarush Shah&#10;Priya Patel&#10;Ryan Johnson"></textarea>
+    </div>
+    <div id="bulk-result" style="font-size:0.875rem;color:#64748b;margin-bottom:10px;display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeBulkModal()">Cancel</button>
+      <button class="btn-modal-save" onclick="bulkImport()" id="bulk-save-btn">Import All</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  let center   = null;
+  let students = [];
+  let sessions = [];
+
+  // ── Init ──────────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      center = await apiFetch('/api/auth/me');
+      document.getElementById('center-name-display').textContent = center.name;
+      switchTab('overview');
+    } catch {
+      window.location.href = '/login.html';
+    }
+  }
+
+  async function apiFetch(url, opts = {}) {
+    const res = await fetch(url, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    });
+    if (res.status === 401) { window.location.href = '/login.html'; return; }
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+    return res.json();
+  }
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.dataset.tab === tab));
+    if (tab === 'overview')  loadOverview();
+    if (tab === 'students')  loadStudents();
+    if (tab === 'settings')  loadSettings();
+    if (tab === 'history')   loadHistory();
+  }
+
+  // ── Overview ──────────────────────────────────────────────────────────────────
+  async function loadOverview() {
+    try {
+      const [stats, kioskData] = await Promise.all([
+        apiFetch('/api/admin/stats'),
+        apiFetch('/api/admin/kiosk-url'),
+      ]);
+      document.getElementById('stat-active').textContent = stats.activeNow;
+      document.getElementById('stat-today').textContent  = stats.studentsToday;
+      document.getElementById('stat-avg').textContent    = stats.avgMin ? `${stats.avgMin}m` : '—';
+      document.getElementById('stat-total').textContent  = stats.totalStudents;
+      document.getElementById('kiosk-url').value         = kioskData.url;
+      document.getElementById('kiosk-open-link').href    = kioskData.url;
+
+      // Load active check-ins for mini-table
+      const activeStudents = await apiFetch('/api/admin/students');
+      const active = activeStudents.filter(s => s.check_in_time);
+      const section = document.getElementById('active-section');
+      const empty   = document.getElementById('active-empty');
+
+      if (active.length === 0) {
+        section.style.display = 'none';
+        empty.style.display   = 'block';
+      } else {
+        section.style.display = 'block';
+        empty.style.display   = 'none';
+        const now = Date.now();
+        document.getElementById('active-tbody').innerHTML = active.map(s => {
+          const elapsed = Math.floor((now - new Date(s.check_in_time).getTime()) / 60000);
+          const checkInTime = new Date(s.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return `<tr>
+            <td><div class="student-name-cell"><span class="live-dot"></span>${esc(s.name)}</div></td>
+            <td><span class="subj-chip">${s.current_subject}</span></td>
+            <td>${checkInTime}</td>
+            <td><strong>${elapsed} min</strong></td>
+          </tr>`;
+        }).join('');
+      }
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── Students ──────────────────────────────────────────────────────────────────
+  async function loadStudents() {
+    try {
+      students = await apiFetch('/api/admin/students');
+      renderStudents(document.getElementById('student-search')?.value || '');
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  function renderStudents(filter = '') {
+    const tbody    = document.getElementById('students-tbody');
+    const filtered = students.filter(s => s.name.toLowerCase().includes(filter.toLowerCase()));
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty">
+        <div class="empty-icon">${filter ? '🔍' : '👤'}</div>
+        <h3>${filter ? 'No students match your search' : 'No students yet — click Add Student to get started'}</h3>
+      </div></td></tr>`;
+      return;
+    }
+
+    const now = Date.now();
+    tbody.innerHTML = filtered.map(s => {
+      const isIn   = !!s.check_in_time;
+      const elapsed = isIn ? Math.floor((now - new Date(s.check_in_time).getTime()) / 60000) : null;
+      return `<tr>
+        <td>
+          <div class="student-name-cell">
+            ${isIn ? '<span class="live-dot"></span>' : ''}
+            ${esc(s.name)}
+          </div>
+        </td>
+        <td>${s.default_subject ? `<span class="subj-chip">${s.default_subject}</span>` : '<span style="color:#94a3b8">—</span>'}</td>
+        <td>${s.parent_email ? `<a href="mailto:${esc(s.parent_email)}" style="color:#1a3c8f;text-decoration:none;">${esc(s.parent_email)}</a>` : '<span style="color:#94a3b8">—</span>'}</td>
+        <td>${s.total_sessions || 0}</td>
+        <td>${s.avg_min ? `${s.avg_min} min` : '—'}</td>
+        <td>
+          ${isIn
+            ? `<span class="status-badge in">✓ ${s.current_subject} · ${elapsed}m</span>`
+            : `<span class="status-badge out">Not in</span>`}
+        </td>
+        <td>
+          <div class="action-btns">
+            ${isIn ? `<button class="btn-icon warn" onclick="adminCheckout('${s.id}')" title="Force check-out">⬆️</button>` : ''}
+            <button class="btn-icon" onclick="openEditModal('${s.id}')" title="Edit">✏️</button>
+            <button class="btn-icon danger" onclick="deleteStudent('${s.id}', '${esc(s.name)}')" title="Delete">🗑️</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Student Modal ─────────────────────────────────────────────────────────────
+  let editingId = null;
+
+  function openAddModal() {
+    editingId = null;
+    document.getElementById('modal-title').textContent = 'Add Student';
+    document.getElementById('modal-save-btn').textContent = 'Add Student';
+    document.getElementById('modal-name').value         = '';
+    document.getElementById('modal-subject').value      = '';
+    document.getElementById('modal-parent-email').value = '';
+    document.getElementById('modal-error').style.display = 'none';
+    document.getElementById('student-modal').classList.add('open');
+    setTimeout(() => document.getElementById('modal-name').focus(), 50);
+  }
+
+  function openEditModal(id) {
+    const s = students.find(x => x.id === id);
+    if (!s) return;
+    editingId = id;
+    document.getElementById('modal-title').textContent     = 'Edit Student';
+    document.getElementById('modal-save-btn').textContent  = 'Save Changes';
+    document.getElementById('modal-name').value            = s.name;
+    document.getElementById('modal-subject').value         = s.default_subject || '';
+    document.getElementById('modal-parent-email').value    = s.parent_email || '';
+    document.getElementById('modal-error').style.display   = 'none';
+    document.getElementById('student-modal').classList.add('open');
+  }
+
+  function closeModal() { document.getElementById('student-modal').classList.remove('open'); }
+
+  async function saveStudent() {
+    const name          = document.getElementById('modal-name').value.trim();
+    const defaultSubject = document.getElementById('modal-subject').value || null;
+    const parentEmail   = document.getElementById('modal-parent-email').value.trim() || null;
+    const errEl         = document.getElementById('modal-error');
+    errEl.style.display = 'none';
+    if (!name) { errEl.textContent = 'Name is required.'; errEl.style.display = 'block'; return; }
+
+    try {
+      if (editingId) {
+        await apiFetch(`/api/admin/students/${editingId}`, {
+          method: 'PUT', body: JSON.stringify({ name, defaultSubject, parentEmail }),
+        });
+        showToast('Student updated ✓', 'success');
+      } else {
+        await apiFetch('/api/admin/students', {
+          method: 'POST', body: JSON.stringify({ name, defaultSubject, parentEmail }),
+        });
+        showToast('Student added ✓', 'success');
+      }
+      closeModal();
+      loadStudents();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function deleteStudent(id, name) {
+    if (!confirm(`Delete ${name}? Their session history will be kept.`)) return;
+    try {
+      await apiFetch(`/api/admin/students/${id}`, { method: 'DELETE' });
+      showToast('Student deleted', 'success');
+      loadStudents();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function adminCheckout(id) {
+    if (!confirm('Force check out this student?')) return;
+    try {
+      await apiFetch(`/api/admin/students/${id}/checkout`, { method: 'POST' });
+      showToast('Checked out ✓', 'success');
+      loadStudents();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function clearAllCheckins() {
+    if (!confirm('Clear ALL active check-ins?\n\nUse this at end of day if students forgot to check out.')) return;
+    try {
+      await apiFetch('/api/admin/checkins', { method: 'DELETE' });
+      showToast('All check-ins cleared ✓', 'success');
+      loadStudents();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── Bulk Import ───────────────────────────────────────────────────────────────
+  function openBulkModal() {
+    document.getElementById('bulk-names').value = '';
+    document.getElementById('bulk-result').style.display = 'none';
+    document.getElementById('bulk-modal').classList.add('open');
+    setTimeout(() => document.getElementById('bulk-names').focus(), 50);
+  }
+
+  function closeBulkModal() { document.getElementById('bulk-modal').classList.remove('open'); }
+
+  async function bulkImport() {
+    const raw   = document.getElementById('bulk-names').value;
+    const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
+    if (!names.length) return;
+
+    const btn = document.getElementById('bulk-save-btn');
+    btn.textContent = 'Importing…'; btn.disabled = true;
+
+    let added = 0, skipped = 0;
+    for (const name of names) {
+      try {
+        await apiFetch('/api/admin/students', {
+          method: 'POST', body: JSON.stringify({ name }),
+        });
+        added++;
+      } catch { skipped++; }
+    }
+
+    const res = document.getElementById('bulk-result');
+    res.textContent = `✓ Added ${added} students${skipped ? `, skipped ${skipped} (already exist)` : ''}.`;
+    res.style.display = 'block';
+    btn.textContent = 'Import All'; btn.disabled = false;
+    loadStudents();
+    if (added > 0) showToast(`Added ${added} students ✓`, 'success');
+  }
+
+  // ── Settings ──────────────────────────────────────────────────────────────────
+  async function loadSettings() {
+    try {
+      const s = await apiFetch('/api/admin/settings');
+      document.getElementById('setting-center-name').value = s.name || '';
+      document.getElementById('setting-math').value        = s.math_limit_min    || 35;
+      document.getElementById('setting-reading').value     = s.reading_limit_min || 35;
+      document.getElementById('setting-both').value        = s.both_limit_min    || 70;
+      document.getElementById('setting-emails').value      = (s.alert_emails || []).join('\n');
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function saveSettings() {
+    const centerName   = document.getElementById('setting-center-name').value.trim();
+    const mathLimit    = parseInt(document.getElementById('setting-math').value)    || 35;
+    const readingLimit = parseInt(document.getElementById('setting-reading').value) || 35;
+    const bothLimit    = parseInt(document.getElementById('setting-both').value)    || 70;
+    const alertEmails  = document.getElementById('setting-emails').value
+      .split('\n').map(e => e.trim()).filter(Boolean);
+
+    try {
+      await apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ centerName, mathLimit, readingLimit, bothLimit, alertEmails }),
+      });
+      showToast('Settings saved ✓', 'success');
+      if (centerName) document.getElementById('center-name-display').textContent = centerName;
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── History ───────────────────────────────────────────────────────────────────
+  async function loadHistory() {
+    try {
+      sessions = await apiFetch('/api/admin/sessions');
+      renderHistory();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  function renderHistory() {
+    const subjectFilter = document.getElementById('filter-subject').value;
+    const tbody   = document.getElementById('history-tbody');
+    const filtered = sessions.filter(s => !subjectFilter || s.subject === subjectFilter);
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty">
+        <div class="empty-icon">📋</div>
+        <h3>No sessions yet</h3>
+      </div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(s => {
+      const d       = new Date(s.check_in_time);
+      const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      const inTime  = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const outTime = s.check_out_time
+        ? new Date(s.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '<span style="color:#94a3b8">—</span>';
+      const dur = s.elapsed_min != null
+        ? `<span class="${s.elapsed_min > 60 ? 'elapsed-over' : 'elapsed-ok'}">${s.elapsed_min} min</span>`
+        : '—';
+      return `<tr>
+        <td style="color:#64748b;font-size:0.875rem;">${dateStr}</td>
+        <td><strong>${esc(s.student_name)}</strong></td>
+        <td><span class="subj-chip">${s.subject}</span></td>
+        <td>${inTime}</td>
+        <td>${outTime}</td>
+        <td>${dur}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Kiosk URL ─────────────────────────────────────────────────────────────────
+  function copyKioskUrl() {
+    const url = document.getElementById('kiosk-url').value;
+    navigator.clipboard.writeText(url).then(() => showToast('Kiosk URL copied! 📋', 'success'));
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────────
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login.html';
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function esc(str) {
+    return String(str || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className   = `toast ${type} show`;
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // Close modal on backdrop click
+  document.getElementById('student-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+  document.getElementById('bulk-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeBulkModal();
+  });
+
+  // Enter key in modal
+  document.getElementById('modal-parent-email').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveStudent();
+  });
+
+  init();
+</script>
+</body>
+</html>
