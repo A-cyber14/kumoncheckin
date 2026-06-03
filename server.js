@@ -190,7 +190,7 @@ app.get('/api/kiosk/:centerId/students', async (req, res) => {
       const limitMin   = subjectLimit(limits, s.subject);
       if (elapsedMin >= limitMin) {
         await pool.query('UPDATE active_checkins SET alerted = TRUE WHERE id = $1', [s.checkin_id]);
-        sendAlert(center, s.name, s.subject, elapsedMin, limitMin); // fire and forget
+        await sendAlert(center, s.name, s.subject, elapsedMin, limitMin);
       }
     }
 
