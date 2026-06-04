@@ -180,20 +180,6 @@ app.get('/api/kiosk/:centerId/students', async (req, res) => {
       };
     });
 
-    // Side-effect: fire alerts inline (works without cron on any plan)
-    const { rows: [center] } = await pool.query(
-      'SELECT name, alert_emails FROM centers WHERE id = $1', [centerId]
-    );
-    for (const s of rows) {
-      if (!s.checkin_id || !s.check_in_time || s.alerted) continue;
-      const elapsedMin = (now - new Date(s.check_in_time).getTime()) / 60000;
-      const limitMin   = subjectLimit(limits, s.subject);
-      if (elapsedMin >= limitMin) {
-        await pool.query('UPDATE active_checkins SET alerted = TRUE WHERE id = $1', [s.checkin_id]);
-        await sendAlert(center, s.name, s.subject, elapsedMin, limitMin);
-      }
-    }
-
     res.json({
       limits: { Math: limits.math_limit_min, Reading: limits.reading_limit_min, Both: limits.both_limit_min },
       students,
@@ -416,39 +402,108 @@ app.get('/api/admin/kiosk-url', requireAuth, (req, res) => {
   res.json({ url: `${base}/?center=${req.center.id}`, centerId: req.center.id });
 });
 
-// ─── CRON ENDPOINT (Vercel Cron or external scheduler) ────────────────────────
-// Add to vercel.json crons to call every minute for bulletproof alerts
-app.get('/api/cron/check-alerts', async (req, res) => {
+// ─── WEEKLY REPORT CRON (runs every Monday at 8 AM UTC via Vercel Cron) ───────
+app.get('/api/cron/weekly-report', async (req, res) => {
   const secret = req.headers['x-cron-secret'] || req.query.secret;
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET)
     return res.status(401).json({ error: 'Unauthorized' });
 
   try {
+    // Fetch all over-limit sessions from the past 7 days, grouped by center
     const { rows } = await pool.query(
-      `SELECT ac.*, s.name AS student_name, c.name AS center_name, c.alert_emails,
-              st.math_limit_min, st.reading_limit_min, st.both_limit_min
-       FROM active_checkins ac
-       JOIN students s  ON s.id = ac.student_id
-       JOIN centers  c  ON c.id = ac.center_id
-       JOIN settings st ON st.center_id = ac.center_id
-       WHERE ac.alerted = FALSE`
+      `SELECT
+         s.center_id,
+         c.name        AS center_name,
+         c.alert_emails,
+         s.student_name,
+         s.subject,
+         s.elapsed_min,
+         s.check_in_time,
+         CASE
+           WHEN s.subject = 'Math'    THEN st.math_limit_min
+           WHEN s.subject = 'Reading' THEN st.reading_limit_min
+           ELSE st.both_limit_min
+         END AS limit_min
+       FROM sessions s
+       JOIN centers  c  ON c.id = s.center_id
+       JOIN settings st ON st.center_id = s.center_id
+       WHERE s.check_in_time >= NOW() - INTERVAL '7 days'
+         AND s.elapsed_min IS NOT NULL
+         AND s.elapsed_min > CASE
+           WHEN s.subject = 'Math'    THEN st.math_limit_min
+           WHEN s.subject = 'Reading' THEN st.reading_limit_min
+           ELSE st.both_limit_min
+         END
+       ORDER BY s.center_id, s.student_name, s.check_in_time`
     );
-    const now = Date.now(); let alerted = 0;
-    for (const ac of rows) {
-      const elapsedMin = (now - new Date(ac.check_in_time).getTime()) / 60000;
-      const limitMin   = subjectLimit(
-        { math_limit_min: ac.math_limit_min, reading_limit_min: ac.reading_limit_min, both_limit_min: ac.both_limit_min },
-        ac.subject
-      );
-      if (elapsedMin >= limitMin) {
-        await pool.query('UPDATE active_checkins SET alerted=TRUE WHERE id=$1', [ac.id]);
-        await sendAlert({ name: ac.center_name, alert_emails: ac.alert_emails },
-          ac.student_name, ac.subject, elapsedMin, limitMin);
-        alerted++;
+
+    // Group by center
+    const byCenterMap = new Map();
+    for (const row of rows) {
+      if (!byCenterMap.has(row.center_id)) {
+        byCenterMap.set(row.center_id, {
+          centerName:  row.center_name,
+          alertEmails: row.alert_emails,
+          sessions:    [],
+        });
       }
+      byCenterMap.get(row.center_id).sessions.push(row);
     }
-    res.json({ checked: rows.length, alerted });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Cron failed' }); }
+
+    let emailsSent = 0;
+    for (const { centerName, alertEmails, sessions } of byCenterMap.values()) {
+      if (!alertEmails?.length || !process.env.GMAIL_USER) continue;
+
+      const tableRows = sessions.map(s => {
+        const date    = new Date(s.check_in_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const overBy  = s.elapsed_min - s.limit_min;
+        return `
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${s.student_name}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${s.subject}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${date}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${s.elapsed_min} min</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${s.limit_min} min</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#dc2626;font-weight:600;">+${overBy} min</td>
+          </tr>`;
+      }).join('');
+
+      const weekEnd   = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      await transporter.sendMail({
+        from:    `"Kumon Check-In" <${process.env.GMAIL_USER}>`,
+        to:      alertEmails.join(', '),
+        subject: `Weekly Report — ${centerName} (week ending ${weekEnd})`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:32px;background:#f0f4ff;border-radius:12px;">
+            <h2 style="color:#1a3c8f;margin-bottom:4px;">Weekly Kumon Time Report</h2>
+            <p style="color:#64748b;margin-top:0;margin-bottom:24px;">${centerName} &mdash; week ending ${weekEnd}</p>
+            <p style="color:#1e293b;margin-bottom:16px;">
+              The following students had <strong>at least one session over their time limit</strong> this week:
+            </p>
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">
+              <thead>
+                <tr style="background:#1a3c8f;color:#fff;">
+                  <th style="padding:10px 12px;text-align:left;">Student</th>
+                  <th style="padding:10px 12px;text-align:left;">Subject</th>
+                  <th style="padding:10px 12px;text-align:left;">Date</th>
+                  <th style="padding:10px 12px;text-align:left;">Time Taken</th>
+                  <th style="padding:10px 12px;text-align:left;">Limit</th>
+                  <th style="padding:10px 12px;text-align:left;">Over By</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+            <p style="color:#64748b;margin-top:24px;font-size:0.85rem;">
+              Sent automatically every Monday by Kumon Check-In.
+            </p>
+          </div>`,
+      });
+      emailsSent++;
+    }
+
+    res.json({ centersChecked: byCenterMap.size, emailsSent });
+  } catch (err) { console.error('[WEEKLY-REPORT]', err); res.status(500).json({ error: 'Weekly report failed' }); }
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
