@@ -7,6 +7,8 @@
     { "src": "/(.*)", "dest": "/server.js" }
   ],
   "crons": [
-    { "path": "/api/cron/weekly-report", "schedule": "0 8 * * 1" }
+    { "path": "/api/cron/weekly-report",  "schedule": "0 8 * * 1" },
+    { "path": "/api/cron/monthly-report", "schedule": "0 8 1 * *" },
+    { "path": "/api/cron/yearly-report",  "schedule": "0 8 1 1 *" }
   ]
 }

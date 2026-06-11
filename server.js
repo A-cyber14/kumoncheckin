@@ -180,6 +180,25 @@ app.get('/api/kiosk/:centerId/students', async (req, res) => {
       };
     });
 
+    // Fire over-time alerts inline — no cron needed, triggers on every kiosk poll
+    const needAlert = rows.filter(r =>
+      r.checkin_id && !r.alerted &&
+      (now - new Date(r.check_in_time).getTime()) > subjectLimit(limits, r.subject) * 60000
+    );
+    if (needAlert.length) {
+      pool.query('SELECT name, alert_emails FROM centers WHERE id = $1', [centerId])
+        .then(({ rows: [ci] }) => {
+          for (const r of needAlert) {
+            const elapsed  = now - new Date(r.check_in_time).getTime();
+            const limitMin = subjectLimit(limits, r.subject);
+            sendAlert(ci, r.name, r.subject, elapsed / 60000, limitMin)
+              .catch(e => console.error('[ALERT send]', e));
+            pool.query('UPDATE active_checkins SET alerted = true WHERE student_id = $1', [r.id])
+              .catch(e => console.error('[ALERT mark]', e));
+          }
+        }).catch(e => console.error('[ALERT center fetch]', e));
+    }
+
     res.json({
       limits: { Math: limits.math_limit_min, Reading: limits.reading_limit_min, Both: limits.both_limit_min },
       students,
@@ -320,6 +339,34 @@ app.post('/api/admin/students/:id/checkout', requireAuth, async (req, res) => {
     await pool.query('DELETE FROM active_checkins WHERE student_id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed' }); }
+});
+
+// Admin manual check-in
+app.post('/api/admin/students/:id/checkin', requireAuth, async (req, res) => {
+  const { subject } = req.body;
+  if (!['Math', 'Reading', 'Both'].includes(subject))
+    return res.status(400).json({ error: 'Invalid subject' });
+  try {
+    const { rows: [student] } = await pool.query(
+      'SELECT id FROM students WHERE id = $1 AND center_id = $2',
+      [req.params.id, req.center.id]
+    );
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const { rows: existing } = await pool.query(
+      'SELECT id FROM active_checkins WHERE student_id = $1', [req.params.id]
+    );
+    if (existing.length) return res.status(400).json({ error: 'Student is already checked in' });
+
+    await pool.query(
+      'INSERT INTO active_checkins (student_id, center_id, subject) VALUES ($1, $2, $3)',
+      [req.params.id, req.center.id, subject]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ADMIN CHECKIN]', err);
+    res.status(500).json({ error: 'Check-in failed' });
+  }
 });
 
 // End-of-day clear all check-ins
@@ -504,6 +551,264 @@ app.get('/api/cron/weekly-report', async (req, res) => {
 
     res.json({ centersChecked: byCenterMap.size, emailsSent });
   } catch (err) { console.error('[WEEKLY-REPORT]', err); res.status(500).json({ error: 'Weekly report failed' }); }
+});
+
+// ─── MONTHLY REPORT CRON (runs 1st of each month at 8 AM UTC) ─────────────────
+app.get('/api/cron/monthly-report', async (req, res) => {
+  const secret = req.headers['x-cron-secret'] || req.query.secret;
+  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET)
+    return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const now        = new Date();
+    const monthEnd   = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const { rows: centers } = await pool.query(
+      "SELECT id, name, alert_emails FROM centers WHERE array_length(alert_emails, 1) > 0"
+    );
+
+    let emailsSent = 0;
+    for (const center of centers) {
+      if (!center.alert_emails?.length || !process.env.GMAIL_USER) continue;
+
+      const { rows: stats } = await pool.query(`
+        SELECT
+          s.student_name,
+          COUNT(*)::int                                                                          AS total_sessions,
+          COALESCE(SUM(s.elapsed_min), 0)::int                                                  AS total_min,
+          ROUND(AVG(s.elapsed_min))::int                                                        AS avg_min,
+          COALESCE(SUM(CASE WHEN s.subject='Math'    THEN s.elapsed_min ELSE 0 END),0)::int    AS math_min,
+          COALESCE(SUM(CASE WHEN s.subject='Reading' THEN s.elapsed_min ELSE 0 END),0)::int    AS reading_min,
+          COALESCE(SUM(CASE WHEN s.subject='Both'    THEN s.elapsed_min ELSE 0 END),0)::int    AS both_min,
+          COUNT(CASE WHEN s.elapsed_min > CASE
+            WHEN s.subject='Math'    THEN st.math_limit_min
+            WHEN s.subject='Reading' THEN st.reading_limit_min
+            ELSE st.both_limit_min END THEN 1 END)::int                                        AS over_limit
+        FROM sessions s
+        JOIN settings st ON st.center_id = s.center_id
+        WHERE s.center_id=$1 AND s.check_in_time>=$2 AND s.check_in_time<$3
+        GROUP BY s.student_name ORDER BY total_min DESC
+      `, [center.id, monthStart, monthEnd]);
+
+      if (!stats.length) continue;
+
+      const totalSessions = stats.reduce((a, s) => a + s.total_sessions, 0);
+      const totalMin      = stats.reduce((a, s) => a + s.total_min, 0);
+      const totalHours    = Math.floor(totalMin / 60);
+      const totalMinRem   = totalMin % 60;
+
+      const studentRows = stats.map(s => {
+        const overStyle = s.over_limit > 0 ? 'color:#dc2626;font-weight:700;' : 'color:#15803d;';
+        return `<tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px 12px;font-weight:700;">${s.student_name}</td>
+          <td style="padding:8px 12px;text-align:center;">${s.total_sessions}</td>
+          <td style="padding:8px 12px;text-align:center;font-weight:700;">${s.total_min} min</td>
+          <td style="padding:8px 12px;text-align:center;">${s.avg_min ?? '—'} min</td>
+          <td style="padding:8px 12px;text-align:center;">${s.math_min    > 0 ? s.math_min    + ' min' : '—'}</td>
+          <td style="padding:8px 12px;text-align:center;">${s.reading_min > 0 ? s.reading_min + ' min' : '—'}</td>
+          <td style="padding:8px 12px;text-align:center;">${s.both_min    > 0 ? s.both_min    + ' min' : '—'}</td>
+          <td style="padding:8px 12px;text-align:center;${overStyle}">${s.over_limit > 0 ? s.over_limit : '✓'}</td>
+        </tr>`;
+      }).join('');
+
+      await transporter.sendMail({
+        from:    `"Kumon Check-In" <${process.env.GMAIL_USER}>`,
+        to:      center.alert_emails.join(', '),
+        subject: `Monthly Report — ${center.name} (${monthLabel})`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:720px;margin:auto;padding:32px;background:#f0f4ff;border-radius:12px;">
+            <h2 style="color:#1a3c8f;margin-bottom:4px;">📅 Monthly Kumon Time Report</h2>
+            <p style="color:#64748b;margin-top:0;margin-bottom:20px;">${center.name} &mdash; ${monthLabel}</p>
+            <div style="display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${totalSessions}</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Sessions</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${stats.length}</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Students</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${totalHours}h ${totalMinRem}m</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Total Time</div>
+              </div>
+            </div>
+            <p style="font-weight:700;color:#1e293b;margin-bottom:12px;">Student Breakdown</p>
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;">
+              <thead>
+                <tr style="background:#1a3c8f;color:#fff;">
+                  <th style="padding:10px 12px;text-align:left;">Student</th>
+                  <th style="padding:10px 12px;text-align:center;">Sessions</th>
+                  <th style="padding:10px 12px;text-align:center;">Total Time</th>
+                  <th style="padding:10px 12px;text-align:center;">Avg/Session</th>
+                  <th style="padding:10px 12px;text-align:center;">Math</th>
+                  <th style="padding:10px 12px;text-align:center;">Reading</th>
+                  <th style="padding:10px 12px;text-align:center;">Both</th>
+                  <th style="padding:10px 12px;text-align:center;">Over Limit</th>
+                </tr>
+              </thead>
+              <tbody>${studentRows}</tbody>
+            </table>
+            <p style="color:#64748b;margin-top:24px;font-size:0.85rem;">Sent automatically on the 1st of each month by Kumon Check-In.</p>
+          </div>`,
+      });
+      emailsSent++;
+    }
+
+    res.json({ centersChecked: centers.length, emailsSent });
+  } catch (err) { console.error('[MONTHLY-REPORT]', err); res.status(500).json({ error: 'Monthly report failed' }); }
+});
+
+// ─── YEARLY REPORT CRON (runs Jan 1st at 8 AM UTC) ────────────────────────────
+app.get('/api/cron/yearly-report', async (req, res) => {
+  const secret = req.headers['x-cron-secret'] || req.query.secret;
+  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET)
+    return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const now       = new Date();
+    const yearEnd   = new Date(now.getFullYear(), 0, 1);
+    const yearStart = new Date(now.getFullYear() - 1, 0, 1);
+    const year      = now.getFullYear() - 1;
+
+    const { rows: centers } = await pool.query(
+      "SELECT id, name, alert_emails FROM centers WHERE array_length(alert_emails, 1) > 0"
+    );
+
+    let emailsSent = 0;
+    for (const center of centers) {
+      if (!center.alert_emails?.length || !process.env.GMAIL_USER) continue;
+
+      const { rows: stats } = await pool.query(`
+        SELECT
+          s.student_name,
+          COUNT(*)::int                                                                          AS total_sessions,
+          COALESCE(SUM(s.elapsed_min), 0)::int                                                  AS total_min,
+          ROUND(AVG(s.elapsed_min))::int                                                        AS avg_min,
+          COALESCE(SUM(CASE WHEN s.subject='Math'    THEN s.elapsed_min ELSE 0 END),0)::int    AS math_min,
+          COALESCE(SUM(CASE WHEN s.subject='Reading' THEN s.elapsed_min ELSE 0 END),0)::int    AS reading_min,
+          COALESCE(SUM(CASE WHEN s.subject='Both'    THEN s.elapsed_min ELSE 0 END),0)::int    AS both_min,
+          COUNT(CASE WHEN s.elapsed_min > CASE
+            WHEN s.subject='Math'    THEN st.math_limit_min
+            WHEN s.subject='Reading' THEN st.reading_limit_min
+            ELSE st.both_limit_min END THEN 1 END)::int                                        AS over_limit
+        FROM sessions s
+        JOIN settings st ON st.center_id = s.center_id
+        WHERE s.center_id=$1 AND s.check_in_time>=$2 AND s.check_in_time<$3
+        GROUP BY s.student_name ORDER BY total_min DESC
+      `, [center.id, yearStart, yearEnd]);
+
+      if (!stats.length) continue;
+
+      const { rows: monthly } = await pool.query(`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', check_in_time), 'Mon YYYY') AS month_label,
+          COUNT(*)::int                                            AS sessions,
+          COALESCE(SUM(elapsed_min), 0)::int                      AS total_min
+        FROM sessions
+        WHERE center_id=$1 AND check_in_time>=$2 AND check_in_time<$3
+        GROUP BY DATE_TRUNC('month', check_in_time)
+        ORDER BY DATE_TRUNC('month', check_in_time)
+      `, [center.id, yearStart, yearEnd]);
+
+      const totalSessions = stats.reduce((a, s) => a + s.total_sessions, 0);
+      const totalMin      = stats.reduce((a, s) => a + s.total_min, 0);
+      const totalHours    = Math.floor(totalMin / 60);
+      const totalMinRem   = totalMin % 60;
+
+      const studentRows = stats.map(s => {
+        const topSubj   = Math.max(s.math_min, s.reading_min, s.both_min) === s.math_min ? 'Math'
+                        : Math.max(s.reading_min, s.both_min) === s.reading_min ? 'Reading' : 'Both';
+        const overStyle = s.over_limit > 0 ? 'color:#dc2626;font-weight:700;' : 'color:#15803d;';
+        return `<tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px 12px;font-weight:700;">${s.student_name}</td>
+          <td style="padding:8px 12px;text-align:center;">${s.total_sessions}</td>
+          <td style="padding:8px 12px;text-align:center;font-weight:700;">${s.total_min} min</td>
+          <td style="padding:8px 12px;text-align:center;">${s.avg_min ?? '—'} min</td>
+          <td style="padding:8px 12px;text-align:center;">${topSubj}</td>
+          <td style="padding:8px 12px;text-align:center;${overStyle}">${s.over_limit > 0 ? s.over_limit : '✓'}</td>
+        </tr>`;
+      }).join('');
+
+      const monthRows = monthly.map(m => `
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:8px 12px;font-weight:600;">${m.month_label}</td>
+          <td style="padding:8px 12px;text-align:center;">${m.sessions}</td>
+          <td style="padding:8px 12px;text-align:center;font-weight:700;">${m.total_min} min (${Math.floor(m.total_min/60)}h ${m.total_min%60}m)</td>
+        </tr>`).join('');
+
+      const medals  = ['🥇','🥈','🥉'];
+      const top3Html = stats.slice(0, 3).map((s, i) =>
+        `<div style="display:inline-block;background:white;border-radius:10px;padding:12px 18px;margin:0 8px 8px 0;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+          <span style="font-size:1.3rem;">${medals[i]}</span>
+          <strong style="color:#1e293b;margin-left:8px;">${s.student_name}</strong>
+          <span style="color:#64748b;font-size:0.85rem;margin-left:6px;">${s.total_min} min &middot; ${s.total_sessions} sessions</span>
+        </div>`
+      ).join('');
+
+      await transporter.sendMail({
+        from:    `"Kumon Check-In" <${process.env.GMAIL_USER}>`,
+        to:      center.alert_emails.join(', '),
+        subject: `${year} Annual Report — ${center.name}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:720px;margin:auto;padding:32px;background:#f0f4ff;border-radius:12px;">
+            <h2 style="color:#1a3c8f;margin-bottom:4px;">🏆 Annual Kumon Time Report</h2>
+            <p style="color:#64748b;margin-top:0;margin-bottom:20px;">${center.name} &mdash; Year ${year}</p>
+            <div style="display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${totalSessions}</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Sessions</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${stats.length}</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Students</div>
+              </div>
+              <div style="background:white;border-radius:10px;padding:14px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.06);min-width:110px;text-align:center;">
+                <div style="font-size:2rem;font-weight:800;color:#1a3c8f;line-height:1;">${totalHours}h ${totalMinRem}m</div>
+                <div style="font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Total Time</div>
+              </div>
+            </div>
+
+            <p style="font-weight:700;color:#1e293b;margin-bottom:12px;">Student Annual Summary</p>
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;margin-bottom:28px;">
+              <thead>
+                <tr style="background:#1a3c8f;color:#fff;">
+                  <th style="padding:10px 12px;text-align:left;">Student</th>
+                  <th style="padding:10px 12px;text-align:center;">Sessions</th>
+                  <th style="padding:10px 12px;text-align:center;">Total Time</th>
+                  <th style="padding:10px 12px;text-align:center;">Avg/Session</th>
+                  <th style="padding:10px 12px;text-align:center;">Top Subject</th>
+                  <th style="padding:10px 12px;text-align:center;">Over-Limit</th>
+                </tr>
+              </thead>
+              <tbody>${studentRows}</tbody>
+            </table>
+
+            <p style="font-weight:700;color:#1e293b;margin-bottom:12px;">Month-by-Month Breakdown</p>
+            <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;margin-bottom:28px;">
+              <thead>
+                <tr style="background:#1a3c8f;color:#fff;">
+                  <th style="padding:10px 12px;text-align:left;">Month</th>
+                  <th style="padding:10px 12px;text-align:center;">Sessions</th>
+                  <th style="padding:10px 12px;text-align:center;">Total Time</th>
+                </tr>
+              </thead>
+              <tbody>${monthRows}</tbody>
+            </table>
+
+            ${stats.length > 0 ? `<p style="font-weight:700;color:#1e293b;margin-bottom:12px;">Most Active Students</p>
+            <div style="margin-bottom:24px;">${top3Html}</div>` : ''}
+
+            <p style="color:#64748b;margin-top:24px;font-size:0.85rem;">Sent automatically on January 1st by Kumon Check-In.</p>
+          </div>`,
+      });
+      emailsSent++;
+    }
+
+    res.json({ centersChecked: centers.length, emailsSent });
+  } catch (err) { console.error('[YEARLY-REPORT]', err); res.status(500).json({ error: 'Yearly report failed' }); }
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────

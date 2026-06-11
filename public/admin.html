@@ -374,7 +374,7 @@
       <table>
         <thead>
           <tr>
-            <th>Student</th><th>Subject</th><th>Checked In</th><th>Time Elapsed</th>
+            <th>Student</th><th>Subject</th><th>Checked In</th><th>Time Elapsed</th><th>Actions</th>
           </tr>
         </thead>
         <tbody id="active-tbody"></tbody>
@@ -537,6 +537,29 @@
   </div>
 </div>
 
+<!-- ── Admin Check-In Modal ── -->
+<div class="modal-backdrop" id="checkin-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Check In Student</h2>
+      <button class="modal-close" onclick="closeCheckinModal()">✕</button>
+    </div>
+    <p id="checkin-student-label" style="font-weight:700;color:#1e293b;font-size:1.05rem;margin-bottom:20px;"></p>
+    <div class="modal-field">
+      <label>Subject</label>
+      <select id="checkin-subject">
+        <option value="Math">📐 Math</option>
+        <option value="Reading">📖 Reading</option>
+        <option value="Both">📐📖 Both</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeCheckinModal()">Cancel</button>
+      <button class="btn-modal-save" onclick="confirmCheckin()" style="background:#16a34a;">Check In</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -611,6 +634,7 @@
             <td><span class="subj-chip">${s.current_subject}</span></td>
             <td>${checkInTime}</td>
             <td><strong>${elapsed} min</strong></td>
+            <td><button class="btn-icon warn" onclick="adminCheckoutOverview('${s.id}')" title="Force check-out">⬆️</button></td>
           </tr>`;
         }).join('');
       }
@@ -659,7 +683,10 @@
         </td>
         <td>
           <div class="action-btns">
-            ${isIn ? `<button class="btn-icon warn" onclick="adminCheckout('${s.id}')" title="Force check-out">⬆️</button>` : ''}
+            ${isIn
+              ? `<button class="btn-icon warn"  onclick="adminCheckout('${s.id}')"                           title="Check out">⬆️</button>`
+              : `<button class="btn-icon"       onclick="openCheckinModal('${s.id}','${esc(s.name)}')" style="background:#dcfce7;" title="Check in">✅</button>`
+            }
             <button class="btn-icon" onclick="openEditModal('${s.id}')" title="Edit">✏️</button>
             <button class="btn-icon danger" onclick="deleteStudent('${s.id}', '${esc(s.name)}')" title="Delete">🗑️</button>
           </div>
@@ -740,6 +767,41 @@
     try {
       await apiFetch(`/api/admin/students/${id}/checkout`, { method: 'POST' });
       showToast('Checked out ✓', 'success');
+      loadStudents();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function adminCheckoutOverview(id) {
+    if (!confirm('Force check out this student?')) return;
+    try {
+      await apiFetch(`/api/admin/students/${id}/checkout`, { method: 'POST' });
+      showToast('Checked out ✓', 'success');
+      loadOverview();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  let checkinStudentId = null;
+
+  function openCheckinModal(id, name) {
+    checkinStudentId = id;
+    document.getElementById('checkin-student-label').textContent = `Checking in: ${name}`;
+    const s = students.find(x => x.id === id);
+    document.getElementById('checkin-subject').value = s?.default_subject || 'Math';
+    document.getElementById('checkin-modal').classList.add('open');
+  }
+
+  function closeCheckinModal() {
+    document.getElementById('checkin-modal').classList.remove('open');
+  }
+
+  async function confirmCheckin() {
+    const subject = document.getElementById('checkin-subject').value;
+    try {
+      await apiFetch(`/api/admin/students/${checkinStudentId}/checkin`, {
+        method: 'POST', body: JSON.stringify({ subject }),
+      });
+      showToast('Checked in ✓', 'success');
+      closeCheckinModal();
       loadStudents();
     } catch (e) { showToast(e.message, 'error'); }
   }
@@ -892,6 +954,9 @@
   });
   document.getElementById('bulk-modal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeBulkModal();
+  });
+  document.getElementById('checkin-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeCheckinModal();
   });
 
   // Enter key in modal
